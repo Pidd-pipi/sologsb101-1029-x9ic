@@ -16,6 +16,8 @@ export interface Element {
   owner: string
   /** 是否关键要素（差异需单独高亮） */
   critical: boolean
+  /** 最后修改来源（设备标识） */
+  origin?: string
 }
 
 export const ELEMENT_CATEGORIES: ElementCategory[] = ['服装', '道具', '妆发', '陈设']

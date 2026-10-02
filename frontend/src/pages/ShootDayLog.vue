@@ -8,9 +8,10 @@ import ConflictTag from '@/components/common/ConflictTag.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import EmptyPanel from '@/components/common/EmptyPanel.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
-import { db, type ConflictRow, type ElementRow, type RecordRow, type SceneRow, type ShootDayRow } from '@/utils/db'
+import { db, type ConflictRow, type ElementRow, type RecordRow, type SceneRow, type ShootDayRow, type MergeIssueRow } from '@/utils/db'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { useRecordStore } from '@/stores/recordStore'
+import OriginTag from '@/components/common/OriginTag.vue'
 import { createEmptyShootDay, type ShootDay } from '@/types/shootDay'
 import { createEmptyRecord, type Record as ContinuityRecord } from '@/types/record'
 import type { FilterSelectConfig, FilterModel } from '@/types/filter'
@@ -27,7 +28,11 @@ const { rows: records } = useIdbTable<RecordRow>(() => db.records)
 const { rows: elements } = useIdbTable<ElementRow>(() => db.elements)
 const { rows: scenes } = useIdbTable<SceneRow>(() => db.scenes, { compare: (a, b) => a.shootOrder - b.shootOrder })
 const { rows: conflicts } = useIdbTable<ConflictRow>(() => db.conflicts)
+const { rows: mergeIssues } = useIdbTable<MergeIssueRow>(() => db.mergeIssues)
 
+const pendingIssueCount = computed(
+  () => mergeIssues.value.filter((item) => item.state === '待裁决' && (item.table === 'records' || item.table === 'shootDays')).length
+)
 const selects = computed<FilterSelectConfig[]>(() => [
   { key: 'sceneIds', label: '场次', options: scenes.value.map((item) => ({ label: `第 ${item.sceneNo} 场`, value: item.id })) },
   { key: 'takes', label: '镜次', options: [...new Set(records.value.map((item) => item.takeNo))].map((item) => ({ label: item, value: item })) }
@@ -64,19 +69,22 @@ const dayRecords = computed(() =>
     .sort((a, b) => a.takeNo.localeCompare(b.takeNo, 'zh-Hans-CN'))
 )
 
-/** 该记录是否涉及未解决差异 */
+/** 该记录是否涉及未解决差异（因合并失效的不提示） */
 function conflictOf(recordId: string): ConflictRow | null {
-  return conflicts.value.find((item) => item.recordIdA === recordId || item.recordIdB === recordId) ?? null
+  return conflicts.value.find((item) => !item.invalidated && (item.recordIdA === recordId || item.recordIdB === recordId)) ?? null
 }
 
 const totals = computed(() => {
-  const open = conflicts.value.filter((item) => item.state === '待确认')
+  const live = conflicts.value.filter((item) => !item.invalidated)
+  const open = live.filter((item) => item.state === '待确认')
   return {
     shootDayCount: shootDays.value.length,
     recordCount: records.value.length,
     dayRecordCount: dayRecords.value.length,
     openConflictCount: open.length,
     blockingCount: open.filter((item) => item.severity === '阻断').length,
+    invalidatedCount: conflicts.value.filter((item) => item.invalidated).length,
+    pendingIssueCount: pendingIssueCount.value,
     elementCount: elements.value.length
   }
 })
@@ -266,7 +274,9 @@ watch(currentDay, (day) => {
       <StatBadge label="现场记录" :value="totals.recordCount" suffix="条" icon="DataLine" tone="info" />
       <StatBadge label="当日记录" :value="totals.dayRecordCount" suffix="条" icon="Grid" tone="success" />
       <StatBadge label="未解决冲突" :value="totals.openConflictCount" suffix="条" icon="WarningFilled" tone="danger" />
+      <StatBadge label="待裁决记录" :value="totals.pendingIssueCount" suffix="条" icon="Switch" tone="danger" />
       <StatBadge label="阻断级" :value="totals.blockingCount" suffix="条" icon="WarningFilled" tone="warning" />
+      <StatBadge label="因合并失效" :value="totals.invalidatedCount" suffix="条" icon="CircleClose" tone="info" />
     </div>
 
     <FilterBar
@@ -301,6 +311,7 @@ watch(currentDay, (day) => {
               <div class="day-item__head">
                 <strong>{{ day.date }}</strong>
                 <el-tag size="small" effect="plain">{{ day.sceneIds.length }} 场</el-tag>
+                <OriginTag :origin="day.origin" />
               </div>
               <div class="day-item__meta">
                 导演 {{ day.director || '—' }} · 场记 {{ day.scripty || '—' }} ·
@@ -360,6 +371,11 @@ watch(currentDay, (day) => {
             <el-table-column prop="currentState" label="当前状态" min-width="200" />
             <el-table-column prop="photoNote" label="照片说明" min-width="150" />
             <el-table-column prop="recordedBy" label="记录人" width="100" />
+            <el-table-column label="来源" width="150">
+              <template #default="{ row }">
+                <OriginTag :origin="row.origin" />
+              </template>
+            </el-table-column>
             <el-table-column label="差异" width="150">
               <template #default="{ row }">
                 <ConflictTag

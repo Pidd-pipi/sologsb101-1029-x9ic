@@ -7,9 +7,10 @@ import { Plus } from '@element-plus/icons-vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import EmptyPanel from '@/components/common/EmptyPanel.vue'
-import { db, type ElementRow, type RecordRow, type SceneRow } from '@/utils/db'
+import { db, type ElementRow, type RecordRow, type SceneRow, type MergeIssueRow } from '@/utils/db'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { useElementStore } from '@/stores/elementStore'
+import OriginTag from '@/components/common/OriginTag.vue'
 import { ELEMENT_CATEGORIES, createEmptyElement, type Element, type ElementCategory } from '@/types/element'
 import type { FilterSelectConfig, FilterModel } from '@/types/filter'
 import { filtersToQuery } from '@/utils/query'
@@ -24,6 +25,10 @@ const { rows: elements, ready } = useIdbTable<ElementRow>(() => db.elements, {
 })
 const { rows: scenes } = useIdbTable<SceneRow>(() => db.scenes, { compare: (a, b) => a.shootOrder - b.shootOrder })
 const { rows: records } = useIdbTable<RecordRow>(() => db.records)
+const { rows: mergeIssues } = useIdbTable<MergeIssueRow>(() => db.mergeIssues)
+const pendingElementIssues = computed(
+  () => mergeIssues.value.filter((item) => item.state === '待裁决' && item.table === 'elements').length
+)
 
 const selects = computed<FilterSelectConfig[]>(() => [
   { key: 'categories', label: '类别', options: ELEMENT_CATEGORIES.map((item) => ({ label: item, value: item })) },
@@ -197,6 +202,7 @@ watch(
       <StatBadge label="关键占比" :value="totals.criticalRatio" :percent="totals.criticalRatio" show-percent icon="PieChart" tone="warning" />
       <StatBadge label="覆盖类别" :value="totals.categoryCount" suffix="类" icon="Grid" tone="info" />
       <StatBadge label="责任人" :value="totals.ownerCount" suffix="人" icon="DataLine" tone="success" />
+      <StatBadge label="待裁决要素" :value="pendingElementIssues" suffix="项" icon="Switch" tone="danger" />
     </div>
 
     <FilterBar
@@ -230,6 +236,11 @@ watch(
         <el-table :data="categoryGroup.items" stripe border size="small">
           <el-table-column prop="name" label="要素名称" min-width="150" />
           <el-table-column prop="initialState" label="初始状态（连戏基准）" min-width="220" />
+          <el-table-column label="来源" width="150">
+            <template #default="{ row }">
+              <OriginTag :origin="row.origin" />
+            </template>
+          </el-table-column>
           <el-table-column prop="owner" label="责任人" width="140" />
           <el-table-column label="关键" width="90">
             <template #default="{ row }">

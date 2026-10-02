@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** /conflicts 连戏差异比对与冲突提示：并排展示两次记录、标记严重程度与解决状态 */
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -20,6 +20,9 @@ import { filtersToQuery } from '@/utils/query'
 const route = useRoute()
 const router = useRouter()
 const store = useConflictStore()
+
+/** 是否同时展示因合并失效的差异（默认隐藏，失效条目只留痕） */
+const showInvalidated = ref(false)
 
 const { rows: conflicts, ready } = useIdbTable<ConflictRow>(() => db.conflicts, {
   compare: (a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity]
@@ -63,6 +66,7 @@ const filtered = computed(() => {
   const states = Array.isArray(store.filters.states) ? store.filters.states : []
   return conflicts.value
     .filter((conflict) => {
+      if (conflict.invalidated && !showInvalidated.value) return false
       const element = elementOf(conflict.elementId)
       const label = `${element ? element.name : ''} ${conflict.diffDesc}`.toLowerCase()
       if (keyword && !label.includes(keyword)) return false
@@ -70,22 +74,28 @@ const filtered = computed(() => {
       if (states.length > 0 && !states.includes(conflict.state)) return false
       return true
     })
-    .sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])
+    .sort((a, b) => Number(!!a.invalidated) - Number(!!b.invalidated) || SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])
 })
 
 const totals = computed(() => {
-  const open = conflicts.value.filter((item) => item.state === '待确认')
+  const live = conflicts.value.filter((item) => !item.invalidated)
+  const open = live.filter((item) => item.state === '待确认')
   return {
-    total: conflicts.value.length,
+    total: live.length,
     open: open.length,
-    resolved: conflicts.value.filter((item) => item.state === '已解决').length,
+    resolved: live.filter((item) => item.state === '已解决').length,
     blocking: open.filter((item) => item.severity === '阻断').length,
     criticalElementCount: elements.value.filter((item) => item.critical).length,
-    pendingCandidates: diff.diffCount.value
+    pendingCandidates: diff.diffCount.value,
+    invalidated: conflicts.value.filter((item) => item.invalidated).length
   }
 })
 
 /** 重新比对：把当前所有要素最近两次记录的差异写入差异表（已存在的不重复生成） */
+function rowClass({ row }: { row: ConflictRow }): string {
+  return row.invalidated ? 'row-invalidated' : ''
+}
+
 async function regenerate(): Promise<void> {
   if (diff.candidates.value.length === 0) {
     ElMessage.info('当前没有可生成的差异（每个要素至少需要两次现场记录）')
@@ -157,6 +167,7 @@ watch(
       <StatBadge label="已解决" :value="totals.resolved" suffix="条" icon="Grid" tone="success" />
       <StatBadge label="阻断级" :value="totals.blocking" suffix="条" icon="WarningFilled" tone="warning" />
       <StatBadge label="可比对候选" :value="totals.pendingCandidates" suffix="条" icon="DataLine" tone="info" />
+      <StatBadge label="因合并失效" :value="totals.invalidated" suffix="条" icon="CircleClose" tone="info" />
     </div>
 
     <FilterBar
@@ -167,6 +178,10 @@ watch(
       @reset="store.resetFilters()"
     />
 
+    <div class="invalid-toggle">
+      <el-switch v-model="showInvalidated" inline-prompt active-text="显示因合并失效的差异（留痕，不参与统计与重开）" inactive-text="" />
+    </div>
+
     <EmptyPanel
       v-if="ready && filtered.length === 0"
       title="还没有差异条目"
@@ -174,7 +189,7 @@ watch(
       :show-create="false"
     />
 
-    <el-table v-else :data="filtered" border stripe row-key="id">
+    <el-table v-else :data="filtered" border stripe row-key="id" :row-class-name="rowClass">
       <el-table-column label="连戏要素" min-width="170">
         <template #default="{ row }">
           <div>{{ elementOf(row.elementId)?.name ?? '要素已删除' }}</div>
@@ -183,6 +198,9 @@ watch(
             {{ elementOf(row.elementId)?.critical ? '关键要素' : '一般要素' }}
           </div>
           <div class="muted">{{ sceneLabelOf(row.elementId) }}</div>
+          <el-tag v-if="row.invalidated" type="info" size="small" effect="plain" class="invalid-tag">
+            因合并失效：{{ row.invalidReason || '记录已重定' }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="记录 A（较早）" min-width="190">
@@ -214,9 +232,12 @@ watch(
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.state === '待确认'" link type="success" size="small" @click="resolve(row)">解决</el-button>
-          <el-button v-else link type="warning" size="small" @click="reopen(row)">重开</el-button>
-          <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
+          <template v-if="!row.invalidated">
+            <el-button v-if="row.state === '待确认'" link type="success" size="small" @click="resolve(row)">解决</el-button>
+            <el-button v-else link type="warning" size="small" @click="reopen(row)">重开</el-button>
+            <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
+          </template>
+          <span v-else class="muted">已留痕</span>
         </template>
       </el-table-column>
     </el-table>

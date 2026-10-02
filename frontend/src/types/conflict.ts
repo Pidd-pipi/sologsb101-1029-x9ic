@@ -22,6 +22,10 @@ export interface Conflict {
   resolvedNote: string
   /** 解决时间（ISO，未解决为空串） */
   resolvedAt: string
+  /** 是否因合并 / 记录裁决而失效（保留留痕，不参与待确认统计与重新生成） */
+  invalidated?: boolean
+  /** 失效原因，如「现场记录裁决后该对记录已无差异」 */
+  invalidReason?: string
 }
 
 export const CONFLICT_SEVERITIES: ConflictSeverity[] = ['轻微', '需处理', '阻断']

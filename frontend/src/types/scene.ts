@@ -22,6 +22,8 @@ export interface Scene {
   shootOrder: number
   /** 拍摄状态 */
   state: SceneState
+  /** 最后修改来源（设备标识；演示行为演示，交接并入行为对端设备名） */
+  origin?: string
 }
 
 export const SCENE_PLACES: ScenePlace[] = ['内景', '外景']

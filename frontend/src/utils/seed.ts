@@ -5,10 +5,11 @@
  */
 import type { SceneRow, ElementRow, ShootDayRow, RecordRow, ConflictRow } from './db'
 import { db, ROW_REVISION } from './db'
+import { ORIGIN_SEED } from './device'
 
-function rev<T>(row: T): T & { revision: number; createdAt: number; updatedAt: number } {
+function rev<T>(row: T, origin?: string): T & { revision: number; createdAt: number; updatedAt: number } {
   const now = Date.now()
-  return { ...row, revision: ROW_REVISION, createdAt: now, updatedAt: now }
+  return { ...row, ...(origin ? { origin } : {}), revision: ROW_REVISION, createdAt: now, updatedAt: now }
 }
 
 const SCENES: Array<Omit<SceneRow, 'revision' | 'createdAt' | 'updatedAt'>> = [
@@ -179,10 +180,10 @@ const CONFLICTS: Array<Omit<ConflictRow, 'revision' | 'createdAt' | 'updatedAt'>
 /** 灌入演示数据（场次 → 要素 → 拍摄日 → 现场记录 → 连戏差异） */
 export async function seedDatabase(): Promise<void> {
   await db.transaction('rw', [db.scenes, db.elements, db.shootDays, db.records, db.conflicts], async () => {
-    await db.scenes.bulkPut(SCENES.map(rev))
-    await db.elements.bulkPut(ELEMENTS.map(rev))
-    await db.shootDays.bulkPut(SHOOT_DAYS.map(rev))
-    await db.records.bulkPut(RECORDS.map(rev))
-    await db.conflicts.bulkPut(CONFLICTS.map(rev))
+    await db.scenes.bulkPut(SCENES.map((row) => rev(row, ORIGIN_SEED)))
+    await db.elements.bulkPut(ELEMENTS.map((row) => rev(row, ORIGIN_SEED)))
+    await db.shootDays.bulkPut(SHOOT_DAYS.map((row) => rev(row, ORIGIN_SEED)))
+    await db.records.bulkPut(RECORDS.map((row) => rev(row, ORIGIN_SEED)))
+    await db.conflicts.bulkPut(CONFLICTS.map((row) => rev({ ...row, invalidated: false, invalidReason: '' })))
   })
 }

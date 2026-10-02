@@ -15,6 +15,8 @@ export interface Record {
   photoNote: string
   /** 记录人 */
   recordedBy: string
+  /** 最后修改来源（设备标识） */
+  origin?: string
 }
 
 export function createEmptyRecord(): Omit<Record, 'id'> {

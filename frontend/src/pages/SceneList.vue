@@ -8,9 +8,10 @@ import FilterBar from '@/components/common/FilterBar.vue'
 import ConflictTag from '@/components/common/ConflictTag.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import EmptyPanel from '@/components/common/EmptyPanel.vue'
-import { db, type ConflictRow, type ElementRow, type SceneRow } from '@/utils/db'
+import { db, type ConflictRow, type ElementRow, type SceneRow, type MergeIssueRow } from '@/utils/db'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { useSceneStore } from '@/stores/sceneStore'
+import OriginTag from '@/components/common/OriginTag.vue'
 import { SCENE_PLACES, SCENE_STATES, SCENE_TIMES, createEmptyScene, type Scene } from '@/types/scene'
 import type { FilterSelectConfig, FilterModel } from '@/types/filter'
 import { filtersToQuery } from '@/utils/query'
@@ -25,6 +26,9 @@ const { rows: scenes, ready } = useIdbTable<SceneRow>(() => db.scenes, {
 })
 const { rows: elements } = useIdbTable<ElementRow>(() => db.elements)
 const { rows: conflicts } = useIdbTable<ConflictRow>(() => db.conflicts)
+const { rows: mergeIssues } = useIdbTable<MergeIssueRow>(() => db.mergeIssues)
+
+const pendingSceneIssues = computed(() => mergeIssues.value.filter((item) => item.state === '待裁决' && item.table === 'scenes').length)
 
 const selects: FilterSelectConfig[] = [
   { key: 'places', label: '内外景', options: SCENE_PLACES.map((item) => ({ label: item, value: item })) },
@@ -194,6 +198,7 @@ watch(
       <StatBadge label="场次数" :value="totals.sceneCount" suffix="场" icon="Files" tone="primary" />
       <StatBadge label="连戏要素" :value="totals.elementCount" suffix="项" icon="Grid" tone="info" />
       <StatBadge label="未解决冲突" :value="totals.openConflictCount" suffix="条" icon="WarningFilled" tone="danger" />
+      <StatBadge label="待裁决场次" :value="pendingSceneIssues" suffix="条" icon="Switch" tone="danger" />
       <StatBadge label="阻断级" :value="totals.blockingCount" suffix="条" icon="WarningFilled" tone="warning" />
       <StatBadge label="已过场次" :value="totals.shotCount" suffix="场" icon="TrendCharts" tone="success" />
       <StatBadge label="拍摄进度" :value="totals.shotRatio" :percent="totals.shotRatio" show-percent icon="PieChart" tone="primary" />
@@ -234,6 +239,7 @@ watch(
             <strong>第 {{ scene.sceneNo }} 场</strong>
             <el-tag size="small" effect="plain">{{ scene.place }} · {{ scene.timeOfDay }}</el-tag>
             <ConflictTag :state="scene.state" />
+            <OriginTag :origin="scene.origin" />
             <el-tag v-if="openConflictCountOf(scene.id) > 0" type="danger" size="small" effect="plain">
               未解决冲突 {{ openConflictCountOf(scene.id) }}
             </el-tag>

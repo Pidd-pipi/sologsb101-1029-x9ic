@@ -125,3 +125,22 @@ body {
 .el-card {
   border-radius: 12px;
 }
+
+/* 因合并失效的差异：灰化留痕，不参与待确认统计 */
+.el-table .row-invalidated {
+  --el-table-tr-bg-color: #f4f5f7;
+  color: #9aa1ab;
+}
+
+.el-table .row-invalidated .el-tag {
+  opacity: 0.85;
+}
+
+.invalid-tag {
+  margin-top: 4px;
+}
+
+.invalid-toggle {
+  display: flex;
+  justify-content: flex-end;
+}

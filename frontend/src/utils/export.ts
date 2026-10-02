@@ -10,6 +10,7 @@ import type { Conflict } from '../types/conflict'
 import { SEVERITY_WEIGHT } from './diff'
 import { DB_NAME, DB_SCHEMA_VERSION, listConflicts, listElements, listRecords, listScenes, listShootDays } from './db'
 import { nowIso } from './uuid'
+import { getDevice } from './device'
 
 /** 单个场次的核对小结 */
 export interface SceneReportRow {
@@ -31,6 +32,9 @@ export interface ContinuityReport {
   name: string
   schemaVersion: number
   exportedAt: string
+  /** 导出方设备（v1 备份可能没有） */
+  deviceId?: string
+  deviceName?: string
   scenes: Scene[]
   elements: Element[]
   shootDays: ShootDay[]
@@ -43,6 +47,8 @@ export interface ContinuityReport {
     openConflictCount: number
     blockedConflictCount: number
     resolvedConflictCount: number
+    /** 因合并 / 现场记录裁决而失效的差异条目数 */
+    invalidatedConflictCount: number
     /** 未解决冲突最多的场次 */
     riskiestSceneNo: string
     rows: SceneReportRow[]
@@ -72,7 +78,7 @@ export async function buildReport(): Promise<ContinuityReport> {
   const rows: SceneReportRow[] = scenes.map((scene) => {
     const sceneElements = elements.filter((item) => item.sceneId === scene.id)
     const elementIds = sceneElements.map((item) => item.id)
-    const sceneConflicts = conflicts.filter((item) => elementIds.includes(item.elementId))
+    const sceneConflicts = conflicts.filter((item) => elementIds.includes(item.elementId) && !item.invalidated)
     return {
       sceneId: scene.id,
       sceneNo: scene.sceneNo,
@@ -92,24 +98,28 @@ export async function buildReport(): Promise<ContinuityReport> {
     (a, b) => b.openConflictCount - a.openConflictCount || b.criticalElementCount - a.criticalElementCount
   )[0]
 
-  const openConflicts = conflicts.filter((item) => item.state === '待确认')
+  const liveConflicts = conflicts.filter((item) => !item.invalidated)
+  const openConflicts = liveConflicts.filter((item) => item.state === '待确认')
 
   return {
     name: DB_NAME,
     schemaVersion: DB_SCHEMA_VERSION,
     exportedAt: nowIso(),
+    deviceId: getDevice().id,
+    deviceName: getDevice().name,
     scenes: scenes.map(stripRevision),
     elements: elements.map(stripRevision),
     shootDays: shootDays.map(stripRevision),
     records: records.map(stripRevision),
-    conflicts: conflicts.map(stripRevision),
+    conflicts: liveConflicts.map(stripRevision),
     summary: {
       sceneCount: scenes.length,
       elementCount: elements.length,
       recordCount: records.length,
       openConflictCount: openConflicts.length,
       blockedConflictCount: openConflicts.filter((item) => item.severity === '阻断').length,
-      resolvedConflictCount: conflicts.filter((item) => item.state === '已解决').length,
+      resolvedConflictCount: liveConflicts.filter((item) => item.state === '已解决').length,
+      invalidatedConflictCount: conflicts.filter((item) => item.invalidated).length,
       riskiestSceneNo: riskiest ? riskiest.sceneNo : '—',
       rows
     }
