@@ -3,7 +3,9 @@
  * 被差异比对页、现场记录页与差异 hook 共同消费。
  */
 import type { ConflictSeverity } from '../types/conflict'
+import type { Element, ElementCategory } from '../types/element'
 import type { Record as ContinuityRecord } from '../types/record'
+import type { ShootDay } from '../types/shootDay'
 
 /** 单条字段级差异 */
 export interface FieldDiff {
@@ -94,4 +96,68 @@ export function severityOf(diffs: FieldDiff[], critical: boolean): ConflictSever
 /** 按严重程度权重倒序排列 */
 export function sortBySeverity<T extends { severity: ConflictSeverity }>(list: T[]): T[] {
   return [...list].sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])
+}
+
+/** 一条候选差异：同一要素最近两次记录之间的比对结果 */
+export interface DiffCandidate {
+  elementId: string
+  elementName: string
+  category: ElementCategory
+  owner: string
+  critical: boolean
+  sceneId: string
+  /** 较早的一次记录 */
+  a: ContinuityRecord
+  /** 较晚的一次记录 */
+  b: ContinuityRecord
+  diffs: FieldDiff[]
+  severity: ConflictSeverity
+  desc: string
+}
+
+/** 记录时间轴：先按拍摄日日期，再按镜次排序 */
+function buildTimeline(records: ContinuityRecord[], shootDays: ShootDay[]): ContinuityRecord[] {
+  const dateOf = (record: ContinuityRecord): string =>
+    shootDays.find((day) => day.id === record.shootDayId)?.date ?? ''
+  return [...records].sort(
+    (a, b) => dateOf(a).localeCompare(dateOf(b)) || a.takeNo.localeCompare(b.takeNo, 'zh-Hans-CN')
+  )
+}
+
+/**
+ * 由全部现场记录派生差异候选（同一要素取最近两次记录做字段级比对）。
+ * 差异页、现场记录页与离线合并后重算共用同一逻辑。
+ */
+export function generateDiffCandidates(
+  records: ContinuityRecord[],
+  elements: Element[],
+  shootDays: ShootDay[]
+): DiffCandidate[] {
+  const result: DiffCandidate[] = []
+  elements.forEach((element) => {
+    const own = buildTimeline(
+      records.filter((record) => record.elementId === element.id),
+      shootDays
+    )
+    if (own.length < 2) return
+    const a = own[own.length - 2]
+    const b = own[own.length - 1]
+    const diffs = diffRecords(a, b)
+    const severity = severityOf(diffs, element.critical)
+    if (!severity) return
+    result.push({
+      elementId: element.id,
+      elementName: element.name,
+      category: element.category,
+      owner: element.owner,
+      critical: element.critical,
+      sceneId: element.sceneId,
+      a,
+      b,
+      diffs,
+      severity,
+      desc: describeDiffs(diffs)
+    })
+  })
+  return sortBySeverity(result)
 }

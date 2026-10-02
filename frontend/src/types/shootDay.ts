@@ -11,6 +11,8 @@ export interface ShootDay {
   scripty: string
   /** 现场备注（天气、突发情况等） */
   weatherNote: string
+  /** 来源（离线交接时标记记录来自哪台机器） */
+  source?: string
 }
 
 export function createEmptyShootDay(): Omit<ShootDay, 'id'> {

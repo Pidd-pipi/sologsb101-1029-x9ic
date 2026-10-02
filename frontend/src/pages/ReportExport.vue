@@ -3,16 +3,17 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Upload } from '@element-plus/icons-vue'
+import { Download, RefreshLeft } from '@element-plus/icons-vue'
 import FilterBar from '@/components/common/FilterBar.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import EmptyPanel from '@/components/common/EmptyPanel.vue'
 import ConflictTag from '@/components/common/ConflictTag.vue'
-import { db, countAll, exportSnapshot, importSnapshot, resetDatabase, DB_NAME, DB_SCHEMA_VERSION, type ConflictRow } from '@/utils/db'
+import { db, countAll, exportSnapshot, resetDatabase, DB_NAME, DB_SCHEMA_VERSION, type ConflictRow } from '@/utils/db'
 import { useIdbTable } from '@/hooks/useIdbTable'
-import { buildReport, downloadJson, parseReport, riskScore, serializeReport, type ContinuityReport } from '@/utils/export'
+import { buildReport, downloadJson, riskScore, serializeReport, type ContinuityReport } from '@/utils/export'
 import type { FilterModel } from '@/types/filter'
 import { filtersToQuery } from '@/utils/query'
+import { ROUTES } from '@/router'
 
 const route = useRoute()
 const router = useRouter()
@@ -61,22 +62,9 @@ async function exportLibrary(): Promise<void> {
   ElMessage.success('本地库已导出为 JSON')
 }
 
-async function importLibrary(): Promise<void> {
-  try {
-    const { value } = await ElMessageBox.prompt('粘贴本地库 JSON 备份内容后确认导入（将覆盖现有数据）', '导入备份', {
-      inputType: 'textarea',
-      confirmButtonText: '确认导入'
-    })
-    const parsed = parseReport(value) as unknown as Awaited<ReturnType<typeof exportSnapshot>>
-    if (!Array.isArray((parsed as unknown as { elements?: unknown[] }).elements)) {
-      throw new Error('缺少 elements 数组字段，不是本应用的备份文件')
-    }
-    await importSnapshot(parsed)
-    await refresh()
-    ElMessage.success('备份已导入')
-  } catch (error) {
-    if (error instanceof Error && error.message) ElMessage.error(`导入失败：${error.message}`)
-  }
+/** 旧的整库覆盖导入已升级为按记录编号的离线交接，跳转到手页处理 */
+function goHandover(): void {
+  void router.push(ROUTES.handover)
 }
 
 async function resetDemo(): Promise<void> {
@@ -190,10 +178,13 @@ watch(filters, (value) => {
             <el-descriptions-item label="导出时间">{{ report?.exportedAt.slice(0, 19).replace('T', ' ') ?? '—' }}</el-descriptions-item>
           </el-descriptions>
           <div class="btn-row">
-            <el-button :icon="Upload" @click="importLibrary">导入备份</el-button>
+            <el-button type="primary" :icon="RefreshLeft" @click="goHandover">离线交接（按记录合并）</el-button>
             <el-button type="danger" plain @click="resetDemo">重置演示数据</el-button>
             <el-button @click="refresh">刷新报告</el-button>
           </div>
+          <p class="muted import-hint">
+            旧的整库覆盖导入已升级为按记录编号的离线交接：一边改过的直接并入，两边都改过则保留两版等场记选定。
+          </p>
         </el-card>
       </el-col>
       <el-col :span="12">
@@ -214,5 +205,11 @@ watch(filters, (value) => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.import-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

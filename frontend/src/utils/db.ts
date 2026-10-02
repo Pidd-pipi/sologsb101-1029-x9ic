@@ -11,6 +11,7 @@ import type { Element } from '../types/element'
 import type { ShootDay } from '../types/shootDay'
 import type { Record as ContinuityRecord } from '../types/record'
 import type { Conflict } from '../types/conflict'
+import type { HandoverBase, HandoverPackage } from '../types/handover'
 import { nowIso } from './uuid'
 import { seedDatabase } from './seed'
 
@@ -18,7 +19,7 @@ import { seedDatabase } from './seed'
 export const DB_NAME = 'gbcontinuity-db'
 
 /** 当前数据结构版本号（每次调整字段结构必须 +1 并补迁移） */
-export const DB_SCHEMA_VERSION = 1
+export const DB_SCHEMA_VERSION = 2
 
 /** 行结构修订号 */
 export const ROW_REVISION = 1
@@ -63,6 +64,8 @@ class GbContinuityDatabase extends Dexie {
   shootDays!: Table<ShootDayRow, string>
   records!: Table<RecordRow, string>
   conflicts!: Table<ConflictRow, string>
+  /** 离线交接基准（单行，id 固定为 merge-base） */
+  syncState!: Table<{ id: string; base: string; updatedAt: number }, string>
 
   constructor() {
     super(DB_NAME)
@@ -73,7 +76,8 @@ class GbContinuityDatabase extends Dexie {
         elements: 'id, sceneId, category, name, owner, critical, updatedAt',
         shootDays: 'id, date, director, scripty, updatedAt',
         records: 'id, shootDayId, elementId, sceneId, takeNo, updatedAt',
-        conflicts: 'id, elementId, recordIdA, recordIdB, severity, state, updatedAt'
+        conflicts: 'id, elementId, recordIdA, recordIdB, severity, state, updatedAt',
+        syncState: 'id, updatedAt'
       })
       .upgrade(async (tx) => {
         // 结构迁移：为历史行补齐行修订号与时间戳；新建库时各表为空，迁移天然幂等
@@ -352,6 +356,72 @@ export async function importSnapshot(snapshot: DatabaseSnapshot): Promise<void> 
     await db.records.bulkPut(snapshot.records.map(stamp))
     await db.conflicts.bulkPut(snapshot.conflicts.map(stamp))
   })
+}
+
+/* --------------------------- 交接基准（合并用） --------------------------- */
+
+const MERGE_BASE_ID = 'merge-base'
+
+/** 读取交接基准；从未导出/导入过返回 null */
+export async function loadBase(): Promise<HandoverBase | null> {
+  const row = await db.syncState.get(MERGE_BASE_ID)
+  if (!row) return null
+  try {
+    return JSON.parse(row.base) as HandoverBase
+  } catch {
+    return null
+  }
+}
+
+/** 保存交接基准（合并完成后调用，把基准更新为合并后的状态） */
+export async function saveBase(base: HandoverBase): Promise<void> {
+  await db.syncState.put({ id: MERGE_BASE_ID, base: JSON.stringify(base), updatedAt: Date.now() })
+}
+
+/** 清空交接基准 */
+export async function clearBase(): Promise<void> {
+  await db.syncState.delete(MERGE_BASE_ID)
+}
+
+/** 把当前整库（去时间戳）打包成交接基准 */
+export async function buildBaseFromCurrent(): Promise<HandoverBase> {
+  const [scenes, elements, shootDays, records] = await Promise.all([
+    db.scenes.toArray(),
+    db.elements.toArray(),
+    db.shootDays.toArray(),
+    db.records.toArray()
+  ])
+  return {
+    scenes: scenes.map(stripRow),
+    elements: elements.map(stripRow),
+    shootDays: shootDays.map(stripRow),
+    records: records.map(stripRow)
+  }
+}
+
+/** 导出交接包：当前库 + 交接基准 + 来源标记 */
+export async function exportHandoverPackage(source: string): Promise<HandoverPackage> {
+  const [scenes, elements, shootDays, records, conflicts, base] = await Promise.all([
+    db.scenes.toArray(),
+    db.elements.toArray(),
+    db.shootDays.toArray(),
+    db.records.toArray(),
+    db.conflicts.toArray(),
+    loadBase()
+  ])
+  const pkg: HandoverPackage = {
+    name: DB_NAME,
+    schemaVersion: DB_SCHEMA_VERSION,
+    exportedAt: nowIso(),
+    source: source || '未命名来源',
+    scenes: scenes.map(stripRow),
+    elements: elements.map(stripRow),
+    shootDays: shootDays.map(stripRow),
+    records: records.map(stripRow),
+    conflicts: conflicts.map(stripRow)
+  }
+  if (base) pkg.base = JSON.stringify(base)
+  return pkg
 }
 
 /** 清空全部数据并重新灌入演示数据 */

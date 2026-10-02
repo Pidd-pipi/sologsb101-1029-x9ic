@@ -15,6 +15,8 @@ export interface Record {
   photoNote: string
   /** 记录人 */
   recordedBy: string
+  /** 来源（离线交接时标记记录来自哪台机器） */
+  source?: string
 }
 
 export function createEmptyRecord(): Omit<Record, 'id'> {

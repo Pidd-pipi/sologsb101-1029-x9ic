@@ -69,7 +69,8 @@ npm run preview    # 本地预览构建产物（http://localhost:22829）
 | `/elements` | 连戏要素登记 | Element、Scene | 按场次与类别分组展示、维护初始状态与责任人、关键要素标记与高亮、增删改 |
 | `/shootdays` | 现场状态记录 | ShootDay、Record、Element | 建立拍摄日并勾选当日场次、按镜次逐条录入当前状态与照片说明、同要素保留历次快照、记录差异角标 |
 | `/conflicts` | 连戏差异比对与冲突提示 | Conflict、Record | **重新比对生成差异**、并排展示记录 A / 记录 B、严重程度与解决状态流转、解决后回写要素初始状态并留痕 |
-| `/report` | 连戏核对报告与结构版本导出 | 全部模型 | 场次核对小结、风险分统计、本地库版本查看、报告 / 整库 JSON 导出与导入 |
+| `/report` | 连戏核对报告与结构版本导出 | 全部模型 | 场次核对小结、风险分统计、本地库版本查看、报告 / 整库 JSON 导出与**离线交接入口** |
+| `/handover` | 离线交接（按记录编号合并） | 全部模型 | 两台机器断网期间各自修改后回来合并：**一边改过的直接并入，两边都改过则保留两版等场记选定**，定下来后立即重算差异条目与核对报告；页面标出来源、待裁决与失效条目数 |
 
 ---
 
@@ -89,12 +90,12 @@ sologsb101-1029/
     ├── public/favicon.svg
     └── src/
         ├── main.ts  App.vue  env.d.ts
-        ├── types/              # scene.ts element.ts shootDay.ts record.ts conflict.ts filter.ts
-        ├── stores/             # sceneStore elementStore recordStore conflictStore
+        ├── types/              # scene.ts element.ts shootDay.ts record.ts conflict.ts filter.ts handover.ts
+        ├── stores/             # sceneStore elementStore recordStore conflictStore handoverStore
         ├── components/common/  # ConflictTag.vue FilterBar.vue StatBadge.vue EmptyPanel.vue
         ├── hooks/              # useContinuityDiff.ts useIdbTable.ts
-        ├── utils/              # diff.ts db.ts export.ts seed.ts uuid.ts query.ts
-        ├── pages/              # SceneList ElementRegistry ShootDayLog ConflictBoard ReportExport
+        ├── utils/              # diff.ts db.ts export.ts seed.ts uuid.ts query.ts merge.ts
+        ├── pages/              # SceneList ElementRegistry ShootDayLog ConflictBoard ReportExport Handover
         ├── styles/main.css
         └── router/index.ts
 ```
@@ -103,9 +104,10 @@ sologsb101-1029/
 
 ## 六、数据存储说明
 
-- **IndexedDB 库名**：`gbcontinuity-db`（Dexie 封装），结构版本号 `version(1)`，并带 `upgrade()` 迁移逻辑（为历史行补齐行修订号与时间戳）。
-- **分表存储**：`scenes` 场次、`elements` 连戏要素、`shootDays` 拍摄日、`records` 现场记录、`conflicts` 连戏差异，共 5 张表；每行带 `revision` / `createdAt` / `updatedAt`。
+- **IndexedDB 库名**：`gbcontinuity-db`（Dexie 封装），结构版本号 `version(2)`，并带 `upgrade()` 迁移逻辑（为历史行补齐行修订号与时间戳）。
+- **分表存储**：`scenes` 场次、`elements` 连戏要素、`shootDays` 拍摄日、`records` 现场记录、`conflicts` 连戏差异，共 5 张表；每行带 `revision` / `createdAt` / `updatedAt`，并可选 `source` 标记来源（离线交接时标记记录来自哪台机器）。另有 `syncState` 表单行存储「交接基准」（上次同步时的整库快照）。
 - **首屏自动播种**：`utils/db.ts` 的 `initDatabase()` 在 `scenes` 表为空时调用 `seedDatabase()`，灌入互相引用的三层演示数据（场次 → 连戏要素 → 拍摄日 → 现场记录 → 差异），其中包含 1 条「阻断 / 待确认」与 1 条「轻微 / 待确认」差异，保证差异页与报告页首次打开就有内容；播种幂等。
 - **差异算法**：`utils/diff.ts` 对状态文本做归一化（去掉空白与标点、颜色/款式同义写法归组，如「藏青 / 深蓝」视为同一色），归一后仍有差异才生成条目；关键要素的状态变化判为「阻断」，一般要素的状态变化判为「需处理」，仅照片说明 / 镜次变化判为「轻微」。
+- **离线交接合并**：`utils/merge.ts` 按记录编号合并两台机器的离线修改。导出交接包时把当前库 + 交接基准 + 来源标记一起打包；导入时用「三方合并」判断：记录在基准中存在且内容一致 → 该边没改过，内容不一致或不存在 → 该边改过。一边改过的直接并入，两边都改过的保留两版等场记选定。合并后立即重算差异条目（保留已解决状态，清理引用已删除记录的失效条目）。旧格式备份（无基准）也能参与合并，只是所有差异都进入待裁决。
 - **无后端**：没有 API 服务、没有数据库容器；容器本身无状态，不挂载任何卷。
 - **级联规则**：删除场次会级联删除其要素、现场记录与相关差异；删除拍摄日会删除当日记录与相关差异。

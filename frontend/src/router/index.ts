@@ -1,5 +1,5 @@
 /**
- * 路由表：/scenes、/elements、/shootdays、/conflicts、/report
+ * 路由表：/scenes、/elements、/shootdays、/conflicts、/report、/handover
  * 页面按路由懒加载，构建时自动分包。
  */
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
@@ -9,7 +9,8 @@ export const ROUTES = {
   elements: '/elements',
   shootdays: '/shootdays',
   conflicts: '/conflicts',
-  report: '/report'
+  report: '/report',
+  handover: '/handover'
 } as const
 
 export interface NavItem {
@@ -25,7 +26,8 @@ export const NAV_ITEMS: NavItem[] = [
   { path: ROUTES.elements, label: '连戏要素', icon: '👗', hint: '服装 / 道具 / 妆发 / 陈设' },
   { path: ROUTES.shootdays, label: '现场记录', icon: '📝', hint: '拍摄日与镜次记录' },
   { path: ROUTES.conflicts, label: '差异比对', icon: '⚠️', hint: '冲突提示与消解' },
-  { path: ROUTES.report, label: '核对报告', icon: '📋', hint: '报告导出与版本查看' }
+  { path: ROUTES.report, label: '核对报告', icon: '📋', hint: '报告导出与版本查看' },
+  { path: ROUTES.handover, label: '离线交接', icon: '🔄', hint: '两台机器按记录编号合并' }
 ]
 
 const routes: RouteRecordRaw[] = [
@@ -59,6 +61,12 @@ const routes: RouteRecordRaw[] = [
     name: 'report',
     component: () => import('@/pages/ReportExport.vue'),
     meta: { title: '连戏核对报告与结构版本导出' }
+  },
+  {
+    path: ROUTES.handover,
+    name: 'handover',
+    component: () => import('@/pages/Handover.vue'),
+    meta: { title: '离线交接' }
   },
   { path: '/:pathMatch(.*)*', redirect: ROUTES.scenes }
 ]

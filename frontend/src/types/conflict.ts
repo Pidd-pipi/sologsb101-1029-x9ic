@@ -22,6 +22,8 @@ export interface Conflict {
   resolvedNote: string
   /** 解决时间（ISO，未解决为空串） */
   resolvedAt: string
+  /** 来源（离线交接时标记记录来自哪台机器） */
+  source?: string
 }
 
 export const CONFLICT_SEVERITIES: ConflictSeverity[] = ['轻微', '需处理', '阻断']

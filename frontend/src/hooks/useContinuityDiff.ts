@@ -3,27 +3,10 @@
  * 被差异比对页、现场记录页与报告页共同消费。
  */
 import { computed, type ComputedRef, type Ref } from 'vue'
-import type { ConflictSeverity } from '@/types/conflict'
-import type { ElementCategory } from '@/types/element'
 import type { ShootDayRow, ElementRow, RecordRow } from '@/utils/db'
-import { describeDiffs, diffRecords, severityOf, sortBySeverity, type FieldDiff } from '@/utils/diff'
+import { generateDiffCandidates, type DiffCandidate } from '@/utils/diff'
 
-/** 一条候选差异：同一要素最近两次记录之间的比对结果 */
-export interface DiffCandidate {
-  elementId: string
-  elementName: string
-  category: ElementCategory
-  owner: string
-  critical: boolean
-  sceneId: string
-  /** 较早的一次记录 */
-  a: RecordRow
-  /** 较晚的一次记录 */
-  b: RecordRow
-  diffs: FieldDiff[]
-  severity: ConflictSeverity
-  desc: string
-}
+export type { DiffCandidate }
 
 export interface ContinuityDiffResult {
   /** 全部存在差异的候选条目（按严重程度倒序） */
@@ -38,17 +21,6 @@ export interface ContinuityDiffResult {
   countByScene: (sceneId: string) => number
 }
 
-/** 记录时间轴：先按拍摄日日期，再按镜次排序 */
-function buildTimeline(records: RecordRow[], shootDays: ShootDayRow[]): RecordRow[] {
-  const dateOf = (record: RecordRow): string =>
-    shootDays.find((day) => day.id === record.shootDayId)?.date ?? ''
-  return [...records].sort(
-    (a, b) =>
-      dateOf(a).localeCompare(dateOf(b)) ||
-      a.takeNo.localeCompare(b.takeNo, 'zh-Hans-CN')
-  )
-}
-
 /**
  * @param records    全部现场记录
  * @param elements   全部连戏要素
@@ -59,35 +31,9 @@ export function useContinuityDiff(
   elements: Ref<ElementRow[]>,
   shootDays: Ref<ShootDayRow[]>
 ): ContinuityDiffResult {
-  const candidates = computed<DiffCandidate[]>(() => {
-    const result: DiffCandidate[] = []
-    elements.value.forEach((element) => {
-      const own = buildTimeline(
-        records.value.filter((record) => record.elementId === element.id),
-        shootDays.value
-      )
-      if (own.length < 2) return
-      const a = own[own.length - 2]
-      const b = own[own.length - 1]
-      const diffs = diffRecords(a, b)
-      const severity = severityOf(diffs, element.critical)
-      if (!severity) return
-      result.push({
-        elementId: element.id,
-        elementName: element.name,
-        category: element.category,
-        owner: element.owner,
-        critical: element.critical,
-        sceneId: element.sceneId,
-        a,
-        b,
-        diffs,
-        severity,
-        desc: describeDiffs(diffs)
-      })
-    })
-    return sortBySeverity(result)
-  })
+  const candidates = computed<DiffCandidate[]>(() =>
+    generateDiffCandidates(records.value, elements.value, shootDays.value)
+  )
 
   return {
     candidates,

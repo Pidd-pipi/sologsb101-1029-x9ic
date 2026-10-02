@@ -22,6 +22,8 @@ export interface Scene {
   shootOrder: number
   /** 拍摄状态 */
   state: SceneState
+  /** 来源（离线交接时标记记录来自哪台机器，如「本地」「外景车A」） */
+  source?: string
 }
 
 export const SCENE_PLACES: ScenePlace[] = ['内景', '外景']
